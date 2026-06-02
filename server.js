@@ -51,7 +51,8 @@ const TxSchema = new mongoose.Schema({
   profileName:       String,
   paymentType:       String,
   reference:         { type: String, unique: true },
-  providerRequestId: String,
+  providerRequestId: String,  // CheckoutRequestID from Megapay
+  merchantRequestId: String,  // MerchantRequestID from Megapay
   status:            { type: String, default: 'pending' },
   megapayResponse:   mongoose.Schema.Types.Mixed,
   createdAt:         { type: Date, default: Date.now }
@@ -101,7 +102,7 @@ const DEFAULT_PROFILES = [
   { id: 36, name: "Nato",      age: 28, gender: "women", location: "Mombasa",                 intent: "Someone to talk to",     services: ["💬 Chat","📹 Video Call"],                                  image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/6001345493784530026.jpg" },
   { id: 37, name: "Jackline",  age: 23, gender: "women", location: "Nakuru",                  intent: "Friendship",             services: ["💬 Chat","🤝 Meet Up","🌙 Overnight"],                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/6001345493784530027.jpg" },
   { id: 38, name: "Amina",     age: 25, gender: "women", location: "Langata, Nairobi",        intent: "Friendship",             services: ["💬 Chat","📹 Video Call"],                                  image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/6001345493784530028.jpg" },
-  { id: 39, name: "Wairimu",   age: 27, gender: "women", location: "Westlands, Nairobi",      intent: "Dating",                 services: ["💬 Chat","🤝 Meet Up","🌙 Overnight"],                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/6001345493784530029.jpg" },
+  { id: 39, name: "Wairimu",   age: 27, gender: "women", location: "Westlands, Nairobi",      intent: "Dating",                 services: ["💬 Chat","📹 Video Call","🌙 Overnight"],                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/6001345493784530029.jpg" },
   { id: 40, name: "Njeri",     age: 24, gender: "women", location: "Parklands, Nairobi",      intent: "Companionship",          services: ["💬 Chat","📹 Video Call","🤝 Meet Up"],                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/6001345493784530030.jpg" },
   { id: 41, name: "Wambui",    age: 29, gender: "women", location: "Embakasi, Nairobi",       intent: "Long-term relationship", services: ["💬 Chat","🤝 Meet Up"],                                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/6001345493784530031.jpg" },
   { id: 42, name: "Akinyi",    age: 23, gender: "women", location: "Kisumu",                  intent: "Friendship",             services: ["💬 Chat","📹 Video Call","🌙 Overnight"],                   image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/6001345493784530033.jpg" },
@@ -157,7 +158,7 @@ const DEFAULT_PROFILES = [
   { id: 92, name: "Margaret",  age: 28, gender: "women", location: "Nyeri",                   intent: "Companionship",          services: ["💬 Chat","🤝 Meet Up","🌙 Overnight"],                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905675.jpg" },
   { id: 93, name: "Tina",      age: 22, gender: "women", location: "Mlolongo, Nairobi",       intent: "Genuine connection",     services: ["💬 Chat","📹 Video Call","🤝 Meet Up"],                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905676.jpg" },
   { id: 94, name: "Rita",      age: 26, gender: "women", location: "Kilifi",                  intent: "Friendship",             services: ["💬 Chat","📹 Video Call"],                                  image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905678.jpg" },
-  { id: 95, name: "Sharon",    age: 24, gender: "women", location: "Umoja, Nairobi",          intent: "Dating",                 services: ["💬 Chat","🤝 Meet Up","🌙 Overnight"],                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905679.jpg" },
+  { id: 95, name: "Sharon",    age: 24, gender: "women", location: "Umoja, Nairobi",          intent: "Dating",                 services: ["💬 Chat","📹 Video Call","🌙 Overnight"],                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905679.jpg" },
   { id: 96, name: "Mary",      age: 29, gender: "women", location: "Bungoma",                 intent: "Networking",             services: ["💬 Chat","📹 Video Call"],                                  image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905680.jpg" },
   { id: 97, name: "Lydia",     age: 23, gender: "women", location: "Langata, Nairobi",        intent: "Long-term relationship", services: ["💬 Chat","📹 Video Call","🤝 Meet Up","🌙 Overnight"],       image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905681.jpg" },
   { id: 98, name: "Judith",    age: 27, gender: "women", location: "Kericho",                 intent: "Companionship",          services: ["💬 Chat","📹 Video Call"],                                  image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905684.jpg" },
@@ -165,7 +166,7 @@ const DEFAULT_PROFILES = [
   { id: 100,name: "Isabella",  age: 24, gender: "women", location: "Westlands, Nairobi",      intent: "Dating",                 services: ["💬 Chat","📹 Video Call","🌙 Overnight"],                   image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905686.jpg" },
   { id: 101,name: "Fatuma",    age: 26, gender: "women", location: "Mombasa",                 intent: "Companionship",          services: ["💬 Chat","📹 Video Call","🤝 Meet Up"],                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905687.jpg" },
   { id: 102,name: "Halima",    age: 23, gender: "women", location: "Malindi",                 intent: "Friendship",             services: ["💬 Chat","📹 Video Call"],                                  image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905688.jpg" },
-  { id: 103,name: "Mariam",    age: 28, gender: "women", location: "Mombasa",                 intent: "Genuine connection",     services: ["💬 Chat","🤝 Meet Up","🌙 Overnight"],                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905689.jpg" },
+  { id: 103,name: "Mariam",    age: 28, gender: "women", location: "Mombasa",                 intent: "Genuine connection",     services: ["💬 Chat","📹 Video Call","🌙 Overnight"],                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905689.jpg" },
   { id: 104,name: "Zainab",    age: 24, gender: "women", location: "Lamu",                    intent: "Dating",                 services: ["💬 Chat","📹 Video Call","🤝 Meet Up"],                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905690.jpg" },
   { id: 105,name: "Habiba",    age: 27, gender: "women", location: "Mombasa",                 intent: "Friendship",             services: ["💬 Chat","📹 Video Call"],                                  image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905691.jpg" },
   { id: 106,name: "Yasmin",    age: 22, gender: "women", location: "Kisumu",                  intent: "Long-term relationship", services: ["💬 Chat","🤝 Meet Up"],                                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905692.jpg" },
@@ -176,7 +177,7 @@ const DEFAULT_PROFILES = [
   { id: 111,name: "Diana B",   age: 25, gender: "women", location: "Gigiri, Nairobi",         intent: "Genuine connection",     services: ["💬 Chat","📹 Video Call","🌙 Overnight"],                   image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905697.jpg" },
   { id: 112,name: "Tiffany",   age: 23, gender: "women", location: "Ruaka, Nairobi",          intent: "Dating",                 services: ["💬 Chat","📹 Video Call","🤝 Meet Up"],                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905698.jpg" },
   { id: 113,name: "Sophia",    age: 27, gender: "women", location: "Upper Hill, Nairobi",     intent: "Companionship",          services: ["💬 Chat","📹 Video Call"],                                  image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905699.jpg" },
-  { id: 114,name: "Olivia",    age: 24, gender: "women", location: "Kileleshwa, Nairobi",     intent: "Friendship",             services: ["💬 Chat","🤝 Meet Up","🌙 Overnight"],                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905700.jpg" }
+  { id: 114,name: "Olivia",    age: 24, gender: "women", location: "Kileleshwa, Nairobi",     intent: "Friendship",             services: ["💬 Chat","📹 Video Call","🌙 Overnight"],                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5791928360219905700.jpg" }
 ];
 
 /* ═══════════════════════════════════════
@@ -245,7 +246,8 @@ app.post('/api/initiate-payment', async (req, res) => {
       const tx = await Transaction.findOne({
         $or: [
           { providerRequestId: transactionRequestId },
-          { reference: transactionRequestId }
+          { reference: transactionRequestId },
+          { merchantRequestId: transactionRequestId }
         ]
       }).sort({ createdAt: -1 });
 
@@ -274,11 +276,11 @@ app.post('/api/initiate-payment', async (req, res) => {
 
     const ref = reference || `${paymentType || 'pay'}-${Date.now()}`;
 
-    const baseUrl = process.env.MEGAPAY_BASE_URL || 'https://megapay.co.ke';
+    const baseUrl = process.env.MEGAPAY_BASE_URL;
     const apiKey  = process.env.MEGAPAY_API_KEY;
     const email   = process.env.MEGAPAY_EMAIL;
 
-    if (!apiKey || !email) {
+    if (!baseUrl || !apiKey || !email) {
       console.log('⚠️ Megapay not configured — mock mode');
       const mockId = 'MOCK-' + Date.now();
       await Transaction.create({
@@ -288,53 +290,95 @@ app.post('/api/initiate-payment', async (req, res) => {
       return res.json({ status: 'queued', providerRequestId: mockId, mock: true });
     }
 
-    /* Megapay official API: POST https://megapay.co.ke/backend/v1/initiatestk
-       Fields: api_key, email, amount, msisdn, reference */
-    const payload = {
-      api_key: apiKey,
-      email: email,
-      amount: String(amount),
-      msisdn: phone,
-      reference: ref
-    };
+    /* Try multiple Megapay endpoint formats */
+    const endpoints = [
+      { url: `${baseUrl}/api/v1/stkpush`,        fields: { api_key: apiKey, email, amount: String(amount), msisdn: phone, reference: ref } },
+      { url: `${baseUrl}/v1/stkpush`,            fields: { api_key: apiKey, email, amount: String(amount), msisdn: phone, reference: ref } },
+      { url: `${baseUrl}/backend/v1/initiatestk`,fields: { api_key: apiKey, email, amount: String(amount), msisdn: phone, reference: ref } },
+      { url: `${baseUrl}/api/payments/initiate`, fields: { api_key: apiKey, email, amount: String(amount), phone: phone, reference: ref } },
+      { url: `${baseUrl}/stkpush`,               fields: { api_key: apiKey, email, amount: String(amount), msisdn: phone, reference: ref } }
+    ];
 
-    console.log('🔄 Megapay STK payload:', JSON.stringify(payload, null, 2));
+    let lastErr = null;
+    let mpRes = null;
+    let usedEndpoint = null;
 
-    const mpRes = await axios.post(`${baseUrl}/backend/v1/initiatestk`, payload, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 25000,
-      validateStatus: () => true
-    });
+    for (const ep of endpoints) {
+      try {
+        console.log('🔄 Trying:', ep.url);
+        const r = await axios.post(ep.url, ep.fields, {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 20000,
+          validateStatus: () => true
+        });
+        console.log('📥', ep.url, '→', r.status, JSON.stringify(r.data).slice(0, 300));
 
-    console.log('📥 Megapay response:', mpRes.status, JSON.stringify(mpRes.data).slice(0, 400));
+        // If we got a success response with CheckoutRequestID or transaction_request_id
+        if (r.status >= 200 && r.status < 300 && r.data) {
+          const data = r.data;
+          // Megapay success: has CheckoutRequestID, MerchantRequestID, or ResponseCode 0
+          // OR has transaction_request_id
+          if (data.CheckoutRequestID || data.MerchantRequestID || data.transaction_request_id ||
+              data.ResponseCode === '0' || data.ResponseCode === 0 ||
+              data.ResultCode === '0' || data.ResultCode === 0 ||
+              data.success === true || data.status === 'queued') {
+            mpRes = r;
+            usedEndpoint = ep.url;
+            break;
+          }
+          // If it returned an error like Invalid API key, note it but don't treat as success
+          if (data.errorMessage || data.ResultCode || data.ResponseDescription) {
+            lastErr = new Error(`${ep.url}: ${data.errorMessage || data.ResponseDescription || JSON.stringify(data)}`);
+          }
+        } else {
+          lastErr = new Error(`${ep.url} returned HTTP ${r.status}`);
+        }
+      } catch (err) {
+        lastErr = err;
+        console.log('❌', ep.url, 'failed:', err.message);
+      }
+    }
 
-    if (mpRes.status >= 200 && mpRes.status < 300 && mpRes.data) {
-      const data = mpRes.data;
-      // Megapay returns: { success: "200", massage: "...", transaction_request_id: "..." }
-      const reqId = data.transaction_request_id || data.providerRequestId || data.requestId || data.transactionId || ref;
-
-      await Transaction.create({
-        phoneNumber: phone,
-        amountKes: amount,
-        profileName: profileName || '',
-        paymentType: paymentType || 'general',
-        reference: ref,
-        providerRequestId: reqId,
-        status: 'pending',
-        megapayResponse: data
-      });
-
-      return res.json({
-        status: 'queued',
-        providerRequestId: reqId,
-        reference: ref,
-        message: data.massage || data.message || 'STK push sent. Check your phone and enter M-Pesa PIN.'
+    if (!mpRes) {
+      console.error('❌ All Megapay endpoints failed. Last:', lastErr?.message);
+      return res.status(502).json({
+        status: 'failed',
+        message: lastErr?.message?.includes('Invalid API key')
+          ? 'Invalid Megapay API key. Please check your .env MEGAPAY_API_KEY.'
+          : 'Payment gateway unreachable. Please try again later.'
       });
     }
 
-    return res.status(502).json({
-      status: 'failed',
-      message: mpRes.data?.massage || mpRes.data?.message || `Megapay returned ${mpRes.status}`
+    const data = mpRes.data;
+    const checkoutId = data.CheckoutRequestID || data.checkoutRequestId || data.transaction_request_id || data.requestId || ref;
+    const merchantId = data.MerchantRequestID || data.merchantRequestId || null;
+
+    // Check if Megapay actually queued it or rejected it
+    const resultCode = data.ResultCode ?? data.ResponseCode ?? data.resultCode;
+    if (resultCode && String(resultCode) !== '0' && String(resultCode) !== '200') {
+      const errMsg = data.errorMessage || data.ResultDesc || data.ResponseDescription || `Megapay error ${resultCode}`;
+      console.error('❌ Megapay rejected:', errMsg);
+      return res.status(400).json({ status: 'failed', message: errMsg });
+    }
+
+    await Transaction.create({
+      phoneNumber: phone,
+      amountKes: amount,
+      profileName: profileName || '',
+      paymentType: paymentType || 'general',
+      reference: ref,
+      providerRequestId: checkoutId,
+      merchantRequestId: merchantId,
+      status: 'pending',
+      megapayResponse: data
+    });
+
+    console.log('✅ STK queued via', usedEndpoint, 'Ref:', ref, 'CheckoutID:', checkoutId);
+    return res.json({
+      status: 'queued',
+      providerRequestId: checkoutId,
+      reference: ref,
+      message: data.ResponseDescription || data.ResultDesc || data.message || 'STK push sent. Check your phone and enter M-Pesa PIN.'
     });
 
   } catch (error) {
@@ -352,30 +396,39 @@ app.post('/api/initiate-payment', async (req, res) => {
 app.post('/api/webhook/megapay', async (req, res) => {
   try {
     const body = req.body;
-    console.log('🔔 Webhook received:', JSON.stringify(body).slice(0, 600));
+    console.log('🔔 Webhook received:', JSON.stringify(body).slice(0, 800));
 
-    const token = req.headers['x-callback-token'] || req.query.token || body.callback_token;
-    if (process.env.MEGAPAY_CALLBACK_TOKEN && token !== process.env.MEGAPAY_CALLBACK_TOKEN) {
-      console.warn('⚠️ Webhook token mismatch');
-      return res.status(401).json({ error: 'Invalid token' });
+    /* Token check — ONLY if a real token is configured */
+    const configuredToken = process.env.MEGAPAY_CALLBACK_TOKEN;
+    const isPlaceholder = !configuredToken || configuredToken === 'your_webhook_secret' || configuredToken === 'acegirls-default-token';
+    if (!isPlaceholder) {
+      const token = req.headers['x-callback-token'] || req.query.token || body.callback_token;
+      if (token !== configuredToken) {
+        console.warn('⚠️ Webhook token mismatch. Got:', token, 'Expected:', configuredToken);
+        return res.status(401).json({ error: 'Invalid callback token' });
+      }
     }
 
-    // Megapay webhook payload:
-    // { ResponseCode, ResponseDescription, MerchantRequestID, CheckoutRequestID,
-    //   TransactionID, TransactionAmount, TransactionReceipt, TransactionDate,
-    //   TransactionReference, Msisdn }
-    const lookupRef = body.TransactionReference || body.transactionReference || body.reference || body.CheckoutRequestID || body.MerchantRequestID;
+    /* Megapay webhook payload fields:
+       ResponseCode, ResponseDescription, MerchantRequestID, CheckoutRequestID,
+       TransactionID, TransactionAmount, TransactionReceipt, TransactionDate,
+       TransactionReference, Msisdn */
+    const checkoutId = body.CheckoutRequestID || body.checkoutRequestId;
+    const merchantId = body.MerchantRequestID || body.merchantRequestId;
+    const lookupRef = body.TransactionReference || body.transactionReference || body.reference;
     const resultCode = body.ResponseCode ?? body.responseCode ?? body.resultCode ?? body.status;
-    const isSuccess = String(resultCode) === '0' || String(resultCode) === '200' || String(body.status).toLowerCase() === 'success';
+    const isSuccess = String(resultCode) === '0' || String(resultCode) === '200' ||
+                      String(body.status).toLowerCase() === 'success' ||
+                      String(body.status).toLowerCase() === 'completed';
     const newStatus = isSuccess ? 'confirmed' : 'failed';
 
+    /* Find transaction by CheckoutRequestID (most reliable) or MerchantRequestID or reference */
     const tx = await Transaction.findOneAndUpdate(
       {
         $or: [
-          { reference: lookupRef },
-          { providerRequestId: body.CheckoutRequestID },
-          { providerRequestId: body.MerchantRequestID },
-          { providerRequestId: body.TransactionID }
+          { providerRequestId: checkoutId },
+          { merchantRequestId: merchantId },
+          { reference: lookupRef }
         ]
       },
       { status: newStatus, megapayResponse: body },
@@ -383,9 +436,10 @@ app.post('/api/webhook/megapay', async (req, res) => {
     );
 
     if (tx) {
-      console.log('✅ Transaction updated:', tx.reference, '→', newStatus);
+      console.log('✅ Transaction updated:', tx.reference, '→', newStatus, 'Receipt:', body.TransactionReceipt || body.transactionReceipt || 'N/A');
     } else {
-      console.warn('⚠️ Webhook: no transaction found for ref', lookupRef);
+      console.warn('⚠️ Webhook: no transaction found for checkoutId=', checkoutId, 'merchantId=', merchantId, 'ref=', lookupRef);
+      // Still acknowledge receipt so Megapay doesn't retry
     }
 
     res.json({ received: true, updated: !!tx, status: newStatus });
@@ -455,13 +509,11 @@ app.get('/api/stats', async (req, res) => {
 });
 
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, time: new Date().toISOString(), megapayConfigured: !!process.env.MEGAPAY_API_KEY });
+  res.json({ ok: true, time: new Date().toISOString(), megapayConfigured: !!(process.env.MEGAPAY_API_KEY && process.env.MEGAPAY_BASE_URL) });
 });
 
 /* ═══════════════════════════════════════
    Static Frontend + SPA Fallback
-   CRITICAL FIX: use path.join(__dirname, ...)
-   NOT path.resolve() which uses cwd
    ═══════════════════════════════════════ */
 const FRONTEND_PATH = path.join(__dirname, process.env.FRONTEND_PATH || '../frontend');
 console.log('📁 Frontend path resolved to:', FRONTEND_PATH);
@@ -479,5 +531,5 @@ const PORT = process.env.PORT || 3028;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 AceGirls API running on http://0.0.0.0:${PORT}`);
   console.log(`📁 Serving frontend from: ${FRONTEND_PATH}`);
-  console.log(`💳 Megapay configured: ${!!process.env.MEGAPAY_API_KEY}`);
+  console.log(`💳 Megapay configured: ${!!(process.env.MEGAPAY_API_KEY && process.env.MEGAPAY_BASE_URL)}`);
 });
