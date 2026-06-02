@@ -6,7 +6,18 @@ const path = require('path');
 const axios = require('axios');
 
 const app = express();
-app.use(cors({ origin: '*', methods: ['GET','POST','PUT','DELETE','OPTIONS'], allowedHeaders: ['Content-Type','Authorization'] }));
+
+/* ═══════════════════════════════════════
+   CORS — configurable via env
+   ═══════════════════════════════════════ */
+const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
+const corsOptions = {
+  origin: CORS_ORIGIN === '*' ? true : CORS_ORIGIN.split(',').map(s => s.trim()),
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 
 /* ═══════════════════════════════════════
@@ -363,11 +374,20 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', time: new Date().toISOString() });
+});
+
 /* ═══════════════════════════════════════
    Static Frontend + SPA Fallback
    ═══════════════════════════════════════ */
+const FRONTEND_PATH = process.env.FRONTEND_PATH || path.join(__dirname, '../frontend');
+app.use(express.static(FRONTEND_PATH));
 
-res.sendFile(path.join(__dirname, '../frontend/index.html'));
+app.get('*', (req, res) => {
+  // Don't intercept API routes (Express order handles this, but belt-and-suspenders)
+  if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'API endpoint not found' });
+  res.sendFile(path.join(FRONTEND_PATH, 'index.html'));
 });
 
 /* ═══════════════════════════════════════
@@ -376,5 +396,5 @@ res.sendFile(path.join(__dirname, '../frontend/index.html'));
 const PORT = process.env.PORT || 3028;
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 AceGirls server running on http://0.0.0.0:${PORT}`);
-  console.log('📡 API-only mode (frontend hosted externally)');
+  console.log(`📁 Serving frontend from: ${FRONTEND_PATH}`);
 });
