@@ -8,7 +8,7 @@ const axios = require('axios');
 const app = express();
 
 /* ═══════════════════════════════════════
-   CORS — configurable via env
+   CORS
    ═══════════════════════════════════════ */
 const CORS_ORIGIN = process.env.CORS_ORIGIN || '*';
 const corsOptions = {
@@ -21,12 +21,12 @@ app.use(cors(corsOptions));
 app.use(express.json());
 
 /* ═══════════════════════════════════════
-   MongoDB Connection
+   MongoDB
    ═══════════════════════════════════════ */
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/acegirls';
 mongoose.connect(MONGODB_URI)
   .then(() => console.log('✅ MongoDB connected'))
-  .catch(err => console.error('❌ MongoDB error:', err.message));
+  .catch(err => { console.error('❌ MongoDB error:', err.message); process.exit(1); });
 
 /* ═══════════════════════════════════════
    Schemas
@@ -52,13 +52,14 @@ const TxSchema = new mongoose.Schema({
   paymentType:       String,
   reference:         { type: String, unique: true },
   providerRequestId: String,
-  status:            { type: String, default: 'pending' }, // pending | confirmed | failed
+  status:            { type: String, default: 'pending' },
+  megapayResponse:   mongoose.Schema.Types.Mixed,
   createdAt:         { type: Date, default: Date.now }
 });
 const Transaction = mongoose.model('Transaction', TxSchema);
 
 /* ═══════════════════════════════════════
-   Default seed data (from profiles-data.js)
+   Seed Data
    ═══════════════════════════════════════ */
 const DEFAULT_PROFILES = [
   { id: 0,  name: "Nelly",     age: 31, gender: "women", location: "Machakos",               intent: "Networking",             services: ["💬 Chat","📹 Video Call","🤝 Meet Up"],                     image: "https://pub-8fc588d8a1844be9b0926af13933401a.r2.dev/5769225506690633522.jpg" },
@@ -179,29 +180,31 @@ const DEFAULT_PROFILES = [
 ];
 
 /* ═══════════════════════════════════════
-   Seed endpoint (run once after deploy)
+   Auto-seed on startup
    ═══════════════════════════════════════ */
-app.post('/api/seed', async (req, res) => {
+(async function autoSeed() {
   try {
     const count = await Profile.countDocuments();
     if (count === 0) {
       await Profile.insertMany(DEFAULT_PROFILES);
-      return res.json({ success: true, message: `Seeded ${DEFAULT_PROFILES.length} profiles` });
+      console.log('🌱 Seeded', DEFAULT_PROFILES.length, 'profiles');
+    } else {
+      console.log('📦', count, 'profiles already in DB');
     }
-    res.json({ success: true, message: `Already seeded with ${count} profiles` });
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error('Seed error:', e.message);
   }
-});
+})();
 
 /* ═══════════════════════════════════════
-   Profiles API
+   API: Profiles
    ═══════════════════════════════════════ */
 app.get('/api/profiles', async (req, res) => {
   try {
     const profiles = await Profile.find({ isActive: true }).lean();
     res.json(profiles);
   } catch (e) {
+    console.error('/api/profiles error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
@@ -217,101 +220,219 @@ app.get('/api/profiles/:id', async (req, res) => {
 });
 
 /* ═══════════════════════════════════════
-   Payments (Megapay M-Pesa)
+   Helpers
+   ═══════════════════════════════════════ */
+function normalizePhone(phone) {
+  let p = String(phone || '').replace(/\s/g, '').replace(/\+/g, '');
+  if (p.startsWith('0')) p = '254' + p.slice(1);
+  if (!p.startsWith('254')) p = '254' + p;
+  return p;
+}
+
+function isValidSafaricom(phone) {
+  return /^2547\d{8}$/.test(phone) || /^2541\d{8}$/.test(phone);
+}
+
+/* ═══════════════════════════════════════
+   API: Initiate Payment (STK Push)
    ═══════════════════════════════════════ */
 app.post('/api/initiate-payment', async (req, res) => {
   try {
     const { action, phoneNumber, amountKes, profileName, paymentType, reference, transactionRequestId } = req.body;
+    console.log('💰 Payment request:', { action, phoneNumber, amountKes, paymentType, reference });
 
-    // ── Status check ──
+    /* ── STATUS CHECK ── */
     if (action === 'status') {
-      const tx = await Transaction.findOne({ providerRequestId: transactionRequestId });
-      if (!tx) return res.json({ status: 'unknown' });
-      return res.json({ status: tx.status, reference: tx.reference });
+      const tx = await Transaction.findOne({
+        $or: [
+          { providerRequestId: transactionRequestId },
+          { reference: transactionRequestId }
+        ]
+      }).sort({ createdAt: -1 });
+
+      if (!tx) {
+        console.log('Status check: transaction not found for', transactionRequestId);
+        return res.json({ status: 'pending' });
+      }
+      console.log('Status check:', tx.reference, '→', tx.status);
+      return res.json({ status: tx.status, reference: tx.reference, providerRequestId: tx.providerRequestId });
     }
 
-    // ── Initiate STK Push ──
+    /* ── INITIATE ── */
+    if (!phoneNumber || !amountKes) {
+      return res.status(400).json({ status: 'failed', message: 'phoneNumber and amountKes required' });
+    }
+
+    const phone = normalizePhone(phoneNumber);
+    if (!isValidSafaricom(phone)) {
+      return res.status(400).json({ status: 'failed', message: 'Invalid Safaricom number. Use 07XX, 01XX, or 2547XX format.' });
+    }
+
+    const amount = Number(amountKes);
+    if (!Number.isFinite(amount) || amount < 1) {
+      return res.status(400).json({ status: 'failed', message: 'Invalid amount' });
+    }
+
+    const ref = reference || `${paymentType || 'pay'}-${Date.now()}`;
+
     const baseUrl     = process.env.MEGAPAY_BASE_URL;
     const apiKey      = process.env.MEGAPAY_API_KEY;
     const email       = process.env.MEGAPAY_EMAIL;
-    const cbUrl       = process.env.MEGAPAY_CALLBACK_URL || `${req.protocol}://${req.get('host')}/api/webhook/megapay`;
-    const cbToken     = process.env.MEGAPAY_CALLBACK_TOKEN || 'acegirls-default-token';
 
-    // If Megapay is NOT configured, return mock for local testing
+    // If Megapay env vars missing → mock mode for local testing
     if (!baseUrl || !apiKey || !email) {
+      console.log('⚠️ Megapay not configured — mock mode');
       const mockId = 'MOCK-' + Date.now();
-      const tx = new Transaction({
-        phoneNumber, amountKes, profileName, paymentType, reference,
-        providerRequestId: mockId, status: 'pending'
+      await Transaction.create({
+        phoneNumber: phone, amountKes: amount, profileName, paymentType,
+        reference: ref, providerRequestId: mockId, status: 'pending'
       });
-      await tx.save();
-      console.log('⚠️ Megapay not configured — returning mock transaction');
       return res.json({ status: 'queued', providerRequestId: mockId, mock: true });
     }
 
+    // Megapay payload — try the most common formats
     const payload = {
-      phone: phoneNumber,
-      amount: amountKes,
-      reference,
-      callback_url: cbUrl,
-      callback_token: cbToken,
-      email,
-      api_key: apiKey
+      phone: phone,
+      amount: amount,
+      reference: ref,
+      email: email,
+      api_key: apiKey,
+      callback_url: process.env.MEGAPAY_CALLBACK_URL || `${req.protocol}://${req.get('host')}/api/webhook/megapay`,
+      callback_token: process.env.MEGAPAY_CALLBACK_TOKEN || 'acegirls-default'
     };
 
-    const mpRes = await axios.post(`${baseUrl}/api/payments/initiate`, payload, {
-      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-      timeout: 20000
-    });
+    // Try multiple Megapay endpoint patterns (they change sometimes)
+    const endpoints = [
+      `${baseUrl}/api/payments/initiate`,
+      `${baseUrl}/api/v1/stkpush`,
+      `${baseUrl}/v1/stkpush`,
+      `${baseUrl}/stkpush`,
+      `${baseUrl}/api/pay`,
+      `${baseUrl}/api/mpesa/stkpush`
+    ];
 
-    if (mpRes.data && (mpRes.data.success || mpRes.data.status === 'queued' || mpRes.data.providerRequestId)) {
-      const reqId = mpRes.data.providerRequestId || mpRes.data.requestId || mpRes.data.transactionId || reference;
-      const tx = new Transaction({
-        phoneNumber, amountKes, profileName, paymentType, reference,
-        providerRequestId: reqId, status: 'pending'
-      });
-      await tx.save();
-      return res.json({ status: 'queued', providerRequestId: reqId });
+    let lastErr = null;
+    let mpRes = null;
+
+    for (const url of endpoints) {
+      try {
+        console.log('🔄 Trying Megapay endpoint:', url);
+        const r = await axios.post(url, payload, {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 20000,
+          validateStatus: () => true // don't throw on 4xx/5xx, let us inspect
+        });
+        console.log('📥 Megapay response from', url, ':', r.status, JSON.stringify(r.data).slice(0, 300));
+
+        // If we got a success-like response, use it
+        if (r.status >= 200 && r.status < 300) {
+          const data = r.data || {};
+          if (data.success || data.status === 'queued' || data.providerRequestId || data.requestId || data.CheckoutRequestID || data.transactionId) {
+            mpRes = r;
+            break;
+          }
+        }
+        lastErr = new Error(`Endpoint ${url} returned ${r.status}: ${JSON.stringify(r.data).slice(0,200)}`);
+      } catch (err) {
+        lastErr = err;
+        console.log('❌ Endpoint failed:', url, err.message);
+      }
     }
 
-    return res.status(400).json({ status: 'failed', message: mpRes.data?.message || 'Megapay rejected request' });
+    if (!mpRes) {
+      console.error('❌ All Megapay endpoints failed. Last error:', lastErr?.message);
+      return res.status(502).json({
+        status: 'failed',
+        message: 'Payment gateway unreachable. Please try again later.',
+        debug: process.env.NODE_ENV === 'development' ? lastErr?.message : undefined
+      });
+    }
+
+    const data = mpRes.data || {};
+    const reqId = data.providerRequestId || data.requestId || data.CheckoutRequestID || data.transactionId || data.reference || ref;
+
+    await Transaction.create({
+      phoneNumber: phone,
+      amountKes: amount,
+      profileName: profileName || '',
+      paymentType: paymentType || 'general',
+      reference: ref,
+      providerRequestId: reqId,
+      status: 'pending',
+      megapayResponse: data
+    });
+
+    console.log('✅ STK queued. Ref:', ref, 'ReqId:', reqId);
+    return res.json({
+      status: 'queued',
+      providerRequestId: reqId,
+      reference: ref,
+      message: data.message || 'Check your phone for the M-Pesa prompt.'
+    });
+
   } catch (error) {
-    console.error('Payment error:', error?.response?.data || error.message);
-    res.status(500).json({ status: 'failed', message: error.message });
+    console.error('❌ /api/initiate-payment CRASH:', error);
+    res.status(500).json({
+      status: 'failed',
+      message: error?.message || 'Server error during payment.'
+    });
   }
 });
 
 /* ═══════════════════════════════════════
-   Megapay Webhook
+   API: Megapay Webhook
    ═══════════════════════════════════════ */
 app.post('/api/webhook/megapay', async (req, res) => {
   try {
-    const { requestId, status, reference, phone, amount } = req.body;
-    const token = req.headers['x-callback-token'] || req.query.token || req.body.callback_token;
+    const body = req.body;
+    console.log('🔔 Webhook received:', JSON.stringify(body).slice(0, 500));
 
+    const token = req.headers['x-callback-token'] || req.query.token || body.callback_token;
     if (process.env.MEGAPAY_CALLBACK_TOKEN && token !== process.env.MEGAPAY_CALLBACK_TOKEN) {
-      return res.status(401).json({ error: 'Invalid callback token' });
+      console.warn('⚠️ Webhook token mismatch');
+      return res.status(401).json({ error: 'Invalid token' });
     }
 
-    const lookupId = requestId || reference;
-    const newStatus = (status === 'success' || status === 'confirmed' || status === 'completed') ? 'confirmed' : 'failed';
+    // Megapay sends different field names — handle all common ones
+    const lookupId = body.requestId || body.providerRequestId || body.transactionId || body.reference || body.CheckoutRequestID;
+    const resultCode = body.resultCode ?? body.result_code ?? body.statusCode ?? body.code;
+    const resultDesc = body.resultDesc ?? body.result_desc ?? body.description ?? body.message ?? '';
+
+    // Determine success: resultCode 0 or status 'success'
+    const isSuccess = String(resultCode) === '0' ||
+                      String(resultCode) === '200' ||
+                      String(body.status).toLowerCase() === 'success' ||
+                      String(body.status).toLowerCase() === 'completed' ||
+                      resultDesc.toLowerCase().includes('success');
+
+    const newStatus = isSuccess ? 'confirmed' : 'failed';
 
     const tx = await Transaction.findOneAndUpdate(
-      { providerRequestId: lookupId },
-      { status: newStatus },
+      {
+        $or: [
+          { providerRequestId: lookupId },
+          { reference: lookupId }
+        ]
+      },
+      { status: newStatus, megapayResponse: body },
       { new: true, sort: { createdAt: -1 } }
     );
 
-    console.log('🔔 Webhook:', lookupId, '→', newStatus, tx ? 'updated' : 'not found');
-    res.json({ received: true, updated: !!tx });
+    if (tx) {
+      console.log('✅ Transaction updated:', tx.reference, '→', newStatus);
+    } else {
+      console.warn('⚠️ Webhook transaction not found for', lookupId);
+    }
+
+    res.json({ received: true, updated: !!tx, status: newStatus });
   } catch (e) {
-    console.error('Webhook error:', e.message);
+    console.error('❌ Webhook crash:', e);
     res.status(500).json({ error: e.message });
   }
 });
 
 /* ═══════════════════════════════════════
-   AI Chat (Cerebras or fallback)
+   API: AI Chat (fallback if no Cerebras key)
    ═══════════════════════════════════════ */
 app.post('/api/ai-chat', async (req, res) => {
   try {
@@ -319,73 +440,67 @@ app.post('/api/ai-chat', async (req, res) => {
 
     if (process.env.CEREBRAS_API_KEY) {
       try {
-        const response = await axios.post('https://api.cerebras.ai/v1/chat/completions', {
+        const cerebrasRes = await axios.post('https://api.cerebras.ai/v1/chat/completions', {
           model: process.env.CEREBRAS_MODEL || 'llama3.1-8b',
           messages: [
-            { role: 'system', content: `You are ${profileName} from ${profileLocation}. You are here for ${profileIntent}. Reply briefly, flirtatiously, and naturally in English. Keep replies under 2 sentences.` },
+            { role: 'system', content: `You are ${profileName} from ${profileLocation}. You are here for ${profileIntent}. Reply briefly, flirtatiously, in English. Max 2 sentences.` },
             ...(messages || [])
           ],
           max_tokens: 120,
           temperature: 0.8
         }, {
-          headers: {
-            'Authorization': `Bearer ${process.env.CEREBRAS_API_KEY}`,
-            'Content-Type': 'application/json'
-          },
+          headers: { Authorization: `Bearer ${process.env.CEREBRAS_API_KEY}`, 'Content-Type': 'application/json' },
           timeout: 10000
         });
-        const reply = response.data?.choices?.[0]?.message?.content;
+        const reply = cerebrasRes.data?.choices?.[0]?.message?.content;
         if (reply) return res.json({ reply });
       } catch (aiErr) {
         console.log('Cerebras failed, using fallback:', aiErr.message);
       }
     }
 
-    // Fallback replies
     const fallbacks = [
       `Hey babe, it's ${profileName}. What's on your mind? 😊`,
       `I'm around ${profileLocation} right now. Tell me more about you.`,
       `That sounds interesting... 💕`,
       `I'd love to chat more. Are you going to unlock my contact?`,
       `Hmm, tell me something I don't know.`,
-      `Hey there! Looking for ${profileIntent.toLowerCase()}? Me too.`,
+      `Hey there! Looking for ${(profileIntent || 'fun').toLowerCase()}? Me too.`,
       `😘 I'm online now. What are you looking for today?`
     ];
-    const reply = fallbacks[Math.floor(Math.random() * fallbacks.length)];
-    res.json({ reply });
+    res.json({ reply: fallbacks[Math.floor(Math.random() * fallbacks.length)] });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
 /* ═══════════════════════════════════════
-   Admin / Utility
+   API: Stats & Health
    ═══════════════════════════════════════ */
 app.get('/api/stats', async (req, res) => {
   try {
-    const [profileCount, txCount, confirmedTx] = await Promise.all([
+    const [profiles, total, confirmed] = await Promise.all([
       Profile.countDocuments({ isActive: true }),
       Transaction.countDocuments(),
       Transaction.countDocuments({ status: 'confirmed' })
     ]);
-    res.json({ profiles: profileCount, transactions: txCount, revenueTransactions: confirmedTx });
+    res.json({ profiles, transactions: total, confirmedTransactions: confirmed });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', time: new Date().toISOString() });
+  res.json({ ok: true, time: new Date().toISOString(), env: !!process.env.MEGAPAY_API_KEY });
 });
 
 /* ═══════════════════════════════════════
    Static Frontend + SPA Fallback
    ═══════════════════════════════════════ */
-const FRONTEND_PATH = process.env.FRONTEND_PATH || path.join(__dirname, '../frontend');
+const FRONTEND_PATH = path.resolve(process.env.FRONTEND_PATH || path.join(__dirname, '../frontend'));
 app.use(express.static(FRONTEND_PATH));
 
 app.get('*', (req, res) => {
-  // Don't intercept API routes (Express order handles this, but belt-and-suspenders)
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'API endpoint not found' });
   res.sendFile(path.join(FRONTEND_PATH, 'index.html'));
 });
@@ -395,6 +510,7 @@ app.get('*', (req, res) => {
    ═══════════════════════════════════════ */
 const PORT = process.env.PORT || 3028;
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🚀 AceGirls server running on http://0.0.0.0:${PORT}`);
-  console.log(`📁 Serving frontend from: ${FRONTEND_PATH}`);
+  console.log(`🚀 AceGirls API running on http://0.0.0.0:${PORT}`);
+  console.log(`📁 Frontend served from: ${FRONTEND_PATH}`);
+  console.log(`💳 Megapay configured: ${!!process.env.MEGAPAY_API_KEY}`);
 });
